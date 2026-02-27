@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Dashboard - OCMS</title>
+    <link rel="stylesheet" href="http://127.0.0.1:8000/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div>
+            <h2>OCMS - Student Dashboard</h2>
+        </div>
+        <div>
+            <a href="http://127.0.0.1:8000/courses/">Browse Courses</a>
+            <a href="http://127.0.0.1:8000/my-courses/">My Courses</a>
+            <a href="#" id="logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="welcome-message"></div>
+        
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="card">
+                <h3>My Courses</h3>
+                <p id="total-enrolled" style="font-size: 2rem; font-weight: bold;">0</p>
+            </div>
+            <div class="card">
+                <h3>Completed</h3>
+                <p id="completed-courses" style="font-size: 2rem; font-weight: bold;">0</p>
+            </div>
+            <div class="card">
+                <h3>In Progress</h3>
+                <p id="in-progress" style="font-size: 2rem; font-weight: bold;">0</p>
+            </div>
+        </div>
+
+        <h2>My Courses in Progress</h2>
+        <div id="loading" class="spinner" style="display: none;"></div>
+        <div id="courses-container" class="card-grid">
+            <!-- Courses will be loaded here -->
+        </div>
+    </div>
+
+    <script src="http://127.0.0.1:8000/static/js/auth.js"></script>
+    <script>
+        // Check if user is logged in and is a student
+        const user = getCurrentUser();
+        if (!user) {
+            window.location.href = appPath('/login/');
+        } else if (user.role !== 'STUDENT') {
+            alert('This page is for students only');
+            window.location.href = appPath('/login/');
+        }
+        
+        document.getElementById('welcome-message').innerHTML = 
+            `<h1>Welcome back, ${user.full_name}!</h1>`;
+
+        // Load dashboard data
+        async function loadDashboard() {
+            const loadingDiv = document.getElementById('loading');
+            const container = document.getElementById('courses-container');
+            
+            loadingDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch(apiUrl('/student/dashboard/'), {
+                    headers: getAuthHeaders()
+                });
+                
+                if (response.status === 401) {
+                    // Token expired
+                    logout();
+                    return;
+                }
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Update stats
+                    document.getElementById('total-enrolled').textContent = data.total_enrolled || 0;
+                    document.getElementById('completed-courses').textContent = data.completed_courses || 0;
+                    document.getElementById('in-progress').textContent = data.in_progress || 0;
+                    
+                    // Display courses
+                    container.innerHTML = '';
+                    loadingDiv.style.display = 'none';
+                    
+                    if (data.courses && data.courses.length > 0) {
+                        data.courses.forEach(course => {
+                            container.innerHTML += `
+                                <div class="course-card">
+                                    <h3>${course.course_title}</h3>
+                                    <p>Instructor: ${course.instructor}</p>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${course.progress}%"></div>
+                                    </div>
+                                    <p>Progress: ${course.progress}%</p>
+                                    <a href="${appPath('/courses/')}?id=${course.course_id}" class="btn">Continue Learning</a>
+                                </div>
+                            `;
+                        });
+                    } else {
+                        container.innerHTML = `<p>You are not enrolled in any courses yet. <a href="${appPath('/courses/')}">Browse courses</a></p>`;
+                    }
+                } else {
+                    loadingDiv.style.display = 'none';
+                    container.innerHTML = '<p style="color: red;">Error loading dashboard. Please try again.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                loadingDiv.style.display = 'none';
+                container.innerHTML = '<p style="color: red;">Error loading dashboard. Please try again.</p>';
+            }
+        }
+
+        loadDashboard();
+
+        // Logout
+        document.getElementById('logout').addEventListener('click', (e) => {
+            e.preventDefault();
+            logout();
+        });
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browse Courses - OCMS</title>
+    <link rel="stylesheet" href="http://127.0.0.1:8000/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div>
+            <h2>OCMS - Browse Courses</h2>
+        </div>
+        <div>
+            <a href="http://127.0.0.1:8000/student-dashboard/">Dashboard</a>
+            <a href="http://127.0.0.1:8000/my-courses/">My Courses</a>
+            <a href="#" id="logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1 id="page-title">Available Courses</h1>
+
+        <div id="list-view">
+            <div class="filters card">
+                <div class="filters-grid">
+                    <div>
+                        <label for="level">Level:</label>
+                        <select id="level" class="form-control">
+                            <option value="">All Levels</option>
+                            <option value="Beginner">Beginner</option>
+                            <option value="Intermediate">Intermediate</option>
+                            <option value="Advanced">Advanced</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="category">Category:</label>
+                        <select id="category" class="form-control">
+                            <option value="">All Categories</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="search">Search:</label>
+                        <input type="text" id="search" placeholder="Course title..." class="form-control">
+                    </div>
+                    <div>
+                        <label for="sort">Sort by:</label>
+                        <select id="sort" class="form-control">
+                            <option value="title">Title A-Z</option>
+                            <option value="-title">Title Z-A</option>
+                            <option value="price">Price: Low to High</option>
+                            <option value="-price">Price: High to Low</option>
+                            <option value="-created_at">Newest First</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="loading" class="spinner" style="display: none;"></div>
+
+            <div id="courses-container" class="card-grid"></div>
+            <div id="pagination" class="pagination"></div>
+        </div>
+
+        <div id="detail-view" class="course-detail" style="display: none;"></div>
+    </div>
+
+    <script src="http://127.0.0.1:8000/static/js/auth.js"></script>
+    <script>
+        const user = getCurrentUser();
+        if (!user) {
+            window.location.href = appPath('/login/');
+        }
+
+        let currentPage = 1;
+        let totalPages = 1;
+
+        const pageTitle = document.getElementById('page-title');
+        const listView = document.getElementById('list-view');
+        const detailView = document.getElementById('detail-view');
+
+        function getSelectedCourseId() {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('id');
+            return id ? Number(id) : null;
+        }
+
+        async function loadCategories() {
+            try {
+                const response = await fetch(apiUrl('/categories/'));
+                if (!response.ok) {
+                    throw new Error(`Failed to load categories: ${response.status}`);
+                }
+                const payload = await response.json();
+                const categories = Array.isArray(payload) ? payload : (payload.results || []);
+
+                const select = document.getElementById('category');
+                categories.forEach((cat) => {
+                    select.innerHTML += `<option value="${cat.id}">${cat.name}</option>`;
+                });
+            } catch (error) {
+                console.error('Error loading categories:', error);
+            }
+        }
+
+        async function loadCourses() {
+            const loadingDiv = document.getElementById('loading');
+            const container = document.getElementById('courses-container');
+
+            loadingDiv.style.display = 'block';
+            container.innerHTML = '';
+
+            try {
+                const level = document.getElementById('level').value;
+                const category = document.getElementById('category').value;
+                const search = document.getElementById('search').value;
+                const sort = document.getElementById('sort').value;
+
+                let url = apiUrl(`/courses/?page=${currentPage}`);
+                if (level) url += `&level=${encodeURIComponent(level)}`;
+                if (category) url += `&category=${encodeURIComponent(category)}`;
+                if (search) url += `&search=${encodeURIComponent(search)}`;
+                if (sort) url += `&ordering=${encodeURIComponent(sort)}`;
+
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`Failed to load courses: ${response.status}`);
+                }
+                const data = await response.json();
+
+                loadingDiv.style.display = 'none';
+
+                if (data.results && data.results.length > 0) {
+                    data.results.forEach((course) => {
+                        container.innerHTML += `
+                            <div class="course-card">
+                                <h3>${course.title}</h3>
+                                <p class="instructor">By ${course.instructor_name || 'Instructor'}</p>
+                                <p class="category">${course.category_name || 'Uncategorized'} - ${course.level}</p>
+                                <p class="price">$${course.price}</p>
+                                <p>${course.total_modules || 0} modules - ${course.total_lectures || 0} lectures</p>
+                                <a href="${appPath('/courses/')}?id=${course.id}" class="btn">View Course</a>
+                            </div>
+                        `;
+                    });
+
+                    totalPages = Math.ceil((data.count || 0) / 10);
+                    updatePagination();
+                } else {
+                    container.innerHTML = '<p style="text-align: center; grid-column: 1 / -1;">No courses found.</p>';
+                    document.getElementById('pagination').innerHTML = '';
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                container.innerHTML = '<p style="color: red; text-align: center; grid-column: 1 / -1;">Error loading courses. Please try again.</p>';
+                console.error('Error loading courses:', error);
+            }
+        }
+
+        function updatePagination() {
+            const paginationDiv = document.getElementById('pagination');
+            paginationDiv.innerHTML = '';
+
+            if (totalPages <= 1) return;
+
+            if (currentPage > 1) {
+                paginationDiv.innerHTML += `<button class="btn" onclick="goToPage(${currentPage - 1})">Previous</button>`;
+            }
+
+            for (let i = 1; i <= totalPages; i += 1) {
+                if (i === currentPage) {
+                    paginationDiv.innerHTML += `<button class="btn btn-secondary" disabled>${i}</button>`;
+                } else if (Math.abs(i - currentPage) < 3 || i === 1 || i === totalPages) {
+                    paginationDiv.innerHTML += `<button class="btn" onclick="goToPage(${i})">${i}</button>`;
+                }
+            }
+
+            if (currentPage < totalPages) {
+                paginationDiv.innerHTML += `<button class="btn" onclick="goToPage(${currentPage + 1})">Next</button>`;
+            }
+        }
+
+        function goToPage(page) {
+            currentPage = page;
+            loadCourses();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        async function enrollInCourse(courseId) {
+            const btn = document.getElementById('enroll-btn');
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Enrolling...';
+
+            try {
+                const response = await fetch(apiUrl('/enroll/'), {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ course_id: courseId })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    btn.textContent = 'Enrolled';
+                    btn.classList.add('btn-secondary');
+                    btn.disabled = true;
+                    alert('Successfully enrolled!');
+                } else {
+                    alert(data.course_id ? data.course_id[0] : (data.error || 'Enrollment failed.'));
+                    btn.textContent = originalText;
+                    btn.disabled = false;
+                }
+            } catch (error) {
+                alert('Unable to enroll right now.');
+                btn.textContent = originalText;
+                btn.disabled = false;
+                console.error('Enroll error:', error);
+            }
+        }
+
+        async function loadCourseDetail(courseId) {
+            pageTitle.textContent = 'Course Details';
+            listView.style.display = 'none';
+            detailView.style.display = 'block';
+            detailView.innerHTML = '<div class="spinner"></div>';
+
+            try {
+                const response = await fetch(apiUrl(`/courses/${courseId}/`));
+
+                if (!response.ok) {
+                    detailView.innerHTML = `<p style="color: red;">Course not found.</p><p><a href="${appPath('/courses/')}" class="btn">Back to Courses</a></p>`;
+                    return;
+                }
+
+                const course = await response.json();
+
+                const modulesHtml = (course.modules || []).map((module) => {
+                    const lectures = (module.lectures || []).map((lecture) => (
+                        `<li class="lecture-item">${lecture.title} (${lecture.duration} min)</li>`
+                    )).join('');
+
+                    return `
+                        <div class="module-item">
+                            <h4>${module.order}. ${module.title}</h4>
+                            <ul class="lecture-list">${lectures || '<li class="lecture-item">No lectures yet.</li>'}</ul>
+                        </div>
+                    `;
+                }).join('');
+
+                detailView.innerHTML = `
+                    <div class="course-header">
+                        <h2>${course.title}</h2>
+                        <p class="instructor">By ${course.instructor.full_name}</p>
+                        <div class="course-meta">
+                            <span>${course.category ? course.category.name : 'Uncategorized'}</span>
+                            <span>${course.level}</span>
+                            <span>$${course.price}</span>
+                        </div>
+                    </div>
+
+                    <div class="course-description">
+                        <h3>About This Course</h3>
+                        <p>${course.description || 'No description provided.'}</p>
+                    </div>
+
+                    <div class="module-list">
+                        <h3>Modules</h3>
+                        ${modulesHtml || '<p>No modules added yet.</p>'}
+                    </div>
+
+                    <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem; flex-wrap: wrap;">
+                        <button id="enroll-btn" class="btn">Enroll Now</button>
+                        <a href="${appPath('/courses/')}" class="btn btn-secondary">Back to Courses</a>
+                    </div>
+                `;
+
+                document.getElementById('enroll-btn').addEventListener('click', () => enrollInCourse(course.id));
+            } catch (error) {
+                detailView.innerHTML = `<p style="color: red;">Error loading course details.</p><p><a href="${appPath('/courses/')}" class="btn">Back to Courses</a></p>`;
+                console.error('Course detail error:', error);
+            }
+        }
+
+        function debounce(func, wait) {
+            let timeout;
+            return function() {
+                clearTimeout(timeout);
+                timeout = setTimeout(func, wait);
+            };
+        }
+
+        document.getElementById('level').addEventListener('change', () => {
+            currentPage = 1;
+            loadCourses();
+        });
+
+        document.getElementById('category').addEventListener('change', () => {
+            currentPage = 1;
+            loadCourses();
+        });
+
+        document.getElementById('search').addEventListener('input', debounce(() => {
+            currentPage = 1;
+            loadCourses();
+        }, 400));
+
+        document.getElementById('sort').addEventListener('change', () => {
+            currentPage = 1;
+            loadCourses();
+        });
+
+        const selectedCourseId = getSelectedCourseId();
+        if (selectedCourseId) {
+            loadCourseDetail(selectedCourseId);
+        } else {
+            loadCategories();
+            loadCourses();
+        }
+
+        document.getElementById('logout').addEventListener('click', (e) => {
+            e.preventDefault();
+            logout();
+        });
+    </script>
+</body>
+</html>
+

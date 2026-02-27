@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Courses - OCMS</title>
+    <link rel="stylesheet" href="http://127.0.0.1:8000/static/css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div>
+            <h2>OCMS - My Courses</h2>
+        </div>
+        <div>
+            <a href="http://127.0.0.1:8000/student-dashboard/">Dashboard</a>
+            <a href="http://127.0.0.1:8000/courses/">Browse Courses</a>
+            <a href="#" id="logout">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <h1>My Enrolled Courses</h1>
+        
+        <div id="loading" class="spinner" style="display: none;"></div>
+        <div id="courses-container" class="card-grid">
+            <!-- Courses will be loaded here -->
+        </div>
+    </div>
+
+    <script src="http://127.0.0.1:8000/static/js/auth.js"></script>
+    <script>
+        // Check authentication
+        const user = getCurrentUser();
+        if (!user) {
+            window.location.href = appPath('/login/');
+        }
+
+        // Load enrolled courses
+        async function loadMyCourses() {
+            const loadingDiv = document.getElementById('loading');
+            const container = document.getElementById('courses-container');
+            
+            loadingDiv.style.display = 'block';
+            
+            try {
+                const response = await fetch(apiUrl('/my-courses/'), {
+                    headers: getAuthHeaders()
+                });
+                
+                if (response.status === 401) {
+                    logout();
+                    return;
+                }
+                
+                if (response.ok) {
+                    const enrollments = await response.json();
+                    
+                    container.innerHTML = '';
+                    loadingDiv.style.display = 'none';
+                    
+                    if (enrollments.length > 0) {
+                        for (const enrollment of enrollments) {
+                            // Get progress for each course
+                            const progressResponse = await fetch(
+                                apiUrl(`/course/${enrollment.course}/progress/`),
+                                { headers: getAuthHeaders() }
+                            );
+                            
+                            if (progressResponse.ok) {
+                                const progress = await progressResponse.json();
+                                
+                                container.innerHTML += `
+                                    <div class="course-card">
+                                        <h3>${enrollment.course_details.title}</h3>
+                                        <p>Instructor: ${enrollment.course_details.instructor_name}</p>
+                                        <p>Level: ${enrollment.course_details.level}</p>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${progress.progress_percentage}%"></div>
+                                        </div>
+                                        <p>Progress: ${progress.progress_percentage}%</p>
+                                        <p>Status: ${enrollment.status}</p>
+                                        <p>Enrolled: ${new Date(enrollment.enrolled_at).toLocaleDateString()}</p>
+                                        <a href="${appPath('/courses/')}?id=${enrollment.course}" class="btn">Continue Learning</a>
+                                    </div>
+                                `;
+                            }
+                        }
+                    } else {
+                        container.innerHTML = `<p>You are not enrolled in any courses. <a href="${appPath('/courses/')}">Browse courses to enroll</a></p>`;
+                    }
+                } else {
+                    loadingDiv.style.display = 'none';
+                    container.innerHTML = '<p style="color: red;">Error loading courses. Please try again.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading my courses:', error);
+                loadingDiv.style.display = 'none';
+                container.innerHTML = '<p style="color: red;">Error loading courses. Please try again.</p>';
+            }
+        }
+
+        loadMyCourses();
+
+        // Logout
+        document.getElementById('logout').addEventListener('click', (e) => {
+            e.preventDefault();
+            logout();
+        });
+    </script>
+</body>
+</html>
+
